@@ -13,6 +13,7 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
@@ -25,6 +26,8 @@ public class AuthorizeServiceImpl implements AuthorizeService {
     private UserMapper userMapper;
     @Resource
     private MailSender mailSender;
+
+    private BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -52,13 +55,17 @@ public class AuthorizeServiceImpl implements AuthorizeService {
      * @return
      */
     @Override
-    public boolean sendValidateEmail(String email, String sessionId) {
+    public String sendValidateEmail(String email, String sessionId) {
         String key = "email:" + email;
         if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
             Long expire = Optional.ofNullable(stringRedisTemplate.getExpire(key)).orElse(0L);
             if (expire > 120) {
-                return false;
+                return "不可以频繁发送信息";
             }
+        }
+        Account account = userMapper.findAccountByNameOrEmail(email);
+        if (account != null) {
+            return "该邮箱已被注册!";
         }
         // 1. 生成对应的验证码
         Random random = new Random(47);
@@ -75,11 +82,29 @@ public class AuthorizeServiceImpl implements AuthorizeService {
 
             stringRedisTemplate.opsForValue().set(key, String.valueOf(code), 3, TimeUnit.MINUTES);
             System.out.println(stringRedisTemplate.opsForValue().get(key));
-            return true;
+            return "验证码发送成功";
         } catch (MailException e) {
             e.printStackTrace();
         }
 
-        return false;
+        return "验证码发送失败，请联系管理员";
+    }
+
+    @Override
+    public String registerAccount(String username, String password, String email, String code) {
+        String msg = "";
+        String key = "email:" + email;
+        if (code == null)
+            return "验证码不能为空";
+        String redisCode = stringRedisTemplate.opsForValue().get(key);
+        if (redisCode == null)
+            return "验证码过期了";
+        if (!redisCode.equals(code))
+            return "请输入正确的验证码";
+        password = encoder.encode(password);
+        int result = userMapper.createAccount(username, password, email);
+        if (!(result > 0))
+            return "注册失败，内部原因，请联系管理员";
+        return "注册成功，快去登陆吧";
     }
 }

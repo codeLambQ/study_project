@@ -7,44 +7,56 @@
         <div style="margin-top: 20px; margin-left: 20px">
             <el-form :rules="rules" :model="form" @validate="isValidate" ref="ruleFormRef">
                 <el-form-item prop="username">
-                    <el-input v-model="form.username" type="text" placeholder="用户名">
+                    <el-input v-model="form.username" maxlength="16" type="text" placeholder="用户名">
                         <template #prefix>
-                            <el-icon><User /></el-icon>
+                            <el-icon>
+                                <User/>
+                            </el-icon>
                         </template>
                     </el-input>
                 </el-form-item>
                 <el-form-item prop="password">
-                    <el-input v-model="form.password" type="password" placeholder="密码">
+                    <el-input v-model="form.password" maxlength="16" type="password" placeholder="密码">
                         <template #prefix>
-                            <el-icon><Lock /></el-icon>
+                            <el-icon>
+                                <Lock/>
+                            </el-icon>
                         </template>
                     </el-input>
                 </el-form-item>
                 <el-form-item prop="password_confirm">
                     <el-input v-model="form.password_confirm" type="password" placeholder="确认密码">
                         <template #prefix>
-                            <el-icon><Lock /></el-icon>
+                            <el-icon>
+                                <Lock/>
+                            </el-icon>
                         </template>
                     </el-input>
                 </el-form-item>
                 <el-form-item prop="email">
                     <el-input v-model="form.email" type="email" placeholder="邮箱   ">
                         <template #prefix>
-                            <el-icon><Message /></el-icon>
+                            <el-icon>
+                                <Message/>
+                            </el-icon>
                         </template>
                     </el-input>
                 </el-form-item>
                 <el-form-item prop="code">
                     <el-row>
-                        <el-col :span="17">
-                            <el-input v-model="form.code" type="text" placeholder="请输入验证码">
+                        <el-col :span="12">
+                            <el-input v-model="form.code" maxlength="6" type="text" placeholder="请输入验证码">
                                 <template #prefix>
-                                    <el-icon><EditPen /></el-icon>
+                                    <el-icon>
+                                        <EditPen/>
+                                    </el-icon>
                                 </template>
                             </el-input>
                         </el-col>
-                        <el-col :span="6"  style="margin-left: 12px">
-                            <el-button @click="sendEmail()" :disabled="!isDisable" type="success">获取验证码</el-button>
+                        <el-col :span="6" style="margin-left: 10px">
+                            <el-button style="width: 160px" @click="sendEmail()" :disabled="!isDisable || coldTime > 0" type="success">
+                                {{ coldTime > 0 ? '请在 ' + coldTime + ' 后重新获取' : '获取验证码'}}
+                            </el-button>
                         </el-col>
                     </el-row>
                 </el-form-item>
@@ -70,6 +82,8 @@ import router from "@/router";
 import {ElMessage} from "element-plus";
 import {post} from "@/net";
 
+const coldTime = ref(0);
+
 const ruleFormRef = ref()
 
 const form = reactive({
@@ -86,8 +100,7 @@ const validateUsername = (rule, value, callback) => {
         callback(new Error('请输入密码!'))
     } else if (!/^[a-zA-Z0-9_\u4E00-\u9FA5]+$/.test(value)) {
         callback(new Error('用户名只能包含中英文，不能有特殊字符!'))
-    }
-    else {
+    } else {
         callback()
     }
 }
@@ -97,26 +110,25 @@ const validatePassword = (rule, value, callback) => {
         callback(new Error('请输入密码!'))
     } else if (value !== form.password) {
         callback(new Error('两次密码不一致!'))
-    }
-    else {
+    } else {
         callback()
     }
 }
 
 const rules = {
     username: [
-        { validator: validateUsername,trigger: ['blur', 'change'] },
-        { min: 3, max: 16, message: '用户名必须在 3 - 16 位之间', trigger: 'blur' },
+        {validator: validateUsername, trigger: ['blur', 'change']},
+        {min: 3, max: 16, message: '用户名必须在 3 - 16 位之间', trigger: 'blur'},
     ],
     password: [
-        { required: true, message: '密码不能为空!', trigger: ['blur', 'change'] },
-        { min: 3, max: 16, message: '密码必须在 3 - 16 位之间', trigger: 'blur' },
+        {required: true, message: '密码不能为空!', trigger: ['blur', 'change']},
+        {min: 3, max: 16, message: '密码必须在 3 - 16 位之间', trigger: 'blur'},
     ],
     password_confirm: [
-        { validator: validatePassword,trigger: ['blur', 'change'] }
+        {validator: validatePassword, trigger: ['blur', 'change']}
     ],
     email: [
-        { required: true, message: '密码不能为空!', trigger: ['blur', 'change'] },
+        {required: true, message: '密码不能为空!', trigger: ['blur', 'change']},
         {
             type: 'email',
             message: '请输入正确的邮箱!',
@@ -124,7 +136,7 @@ const rules = {
         }
     ],
     code: [
-        { required: true, message: '验证码不能为空!', trigger: ['blur', 'change'] },
+        {required: true, message: '验证码不能为空!', trigger: ['blur', 'change']},
     ]
 }
 
@@ -136,8 +148,17 @@ const isValidate = (prop, isValid) => {
 }
 const onSubmit = () => {
     ruleFormRef.value.validate((isValid) => {
-        if(isValid) {
-
+        if (isValid) {
+            // 往后端发送注册的数据
+            post('/api/auth/register', {
+                username: form.username,
+                password: form.password,
+                email: form.email,
+                code: form.code
+            }, (message) => {
+                ElMessage.success(message)
+                router.push('/')
+            })
         } else {
             ElMessage.warning('请完整填写表单')
         }
@@ -149,6 +170,10 @@ const sendEmail = () => {
         email: form.email
     }, (message) => {
         ElMessage.warning(message)
+        coldTime.value = 60;
+        setInterval(() => {
+            coldTime.value--
+        }, 1000)
     })
 }
 </script>
